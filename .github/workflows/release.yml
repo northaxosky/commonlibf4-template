@@ -2,8 +2,8 @@ name: Release
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+    paths: [xmake.lua]
 
 permissions:
   contents: read
@@ -13,111 +13,70 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  decision:
+  prepare:
     runs-on: windows-latest
     outputs:
-      publish: ${{ steps.release.outputs.publish }}
-      version: ${{ steps.release.outputs.version }}
-      tag: ${{ steps.release.outputs.tag }}
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - id: release
-        name: Evaluate version change
-        shell: pwsh
-        run: |
-          $decision = ./scripts/release.ps1 `
-            -Action Evaluate `
-            -Before '${{ github.event.before }}' `
-            -After '${{ github.sha }}' `
-            -EventName '${{ github.event_name }}' `
-            -Ref '${{ github.ref }}' | ConvertFrom-Json
-          "publish=$($decision.publish.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
-          "version=$($decision.version)" >> $env:GITHUB_OUTPUT
-          "tag=$($decision.tag)" >> $env:GITHUB_OUTPUT
-          "Release decision: $($decision.reason)"
-
-  publish:
-    needs: decision
-    if: needs.decision.outputs.publish == 'true'
-    runs-on: windows-latest
-    permissions:
-      contents: write
-
+      publish: ${{ steps.info.outputs.publish }}
+      tag: ${{ steps.info.outputs.tag }}
+      filename: ${{ steps.info.outputs.filename }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: recursive
-
       - uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: '3.1.1'
+      - id: info
+        name: Read release metadata
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: xmake release-info --before="$env:BEFORE" --output="$env:GITHUB_OUTPUT"
+      - name: Verify release
+        if: steps.info.outputs.publish == 'true'
+        run: |
+          xmake f -y -m releasedbg --toolchain=msvc --deploy_dir=
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          xmake verify
+      - uses: actions/upload-artifact@v4
+        if: steps.info.outputs.publish == 'true'
+        with:
+          name: release
+          path: ${{ steps.info.outputs.archive }}
+          if-no-files-found: error
 
-      - name: Build and verify release payload
-        shell: pwsh
-        run: ./scripts/verify.ps1 -Toolchain msvc -Mode releasedbg -Full
-
-      - name: Publish release
-        shell: pwsh
+  publish:
+    needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: dist
+      - name: Publish verified archive
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ needs.decision.outputs.tag }}
-          RELEASE_VERSION: ${{ needs.decision.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          ASSET: ${{ needs.prepare.outputs.filename }}
         run: |
-          $ErrorActionPreference = 'Stop'
-          $archive = Resolve-Path "build/xpack/commonlibf4-template/commonlibf4-template-$env:RELEASE_VERSION.zip"
-          $assetName = Split-Path $archive -Leaf
-          $expectedCommit = '${{ github.sha }}'
-
-          git ls-remote --exit-code --tags origin "refs/tags/$env:RELEASE_TAG" *> $null
-          $tagExists = $LASTEXITCODE -eq 0
-          if ($tagExists) {
-            git fetch --force origin "refs/tags/$env:RELEASE_TAG`:refs/tags/$env:RELEASE_TAG"
-            $tagCommit = (git rev-list -n 1 $env:RELEASE_TAG).Trim()
-            if ($tagCommit -cne $expectedCommit) {
-              throw "Tag $env:RELEASE_TAG already points to $tagCommit, not $expectedCommit."
+          if git show-ref --verify --quiet "refs/tags/$TAG"; then
+            test "$(git rev-list -n 1 "$TAG")" = "$GITHUB_SHA" || {
+              echo "::error::Tag $TAG belongs to a different commit"; exit 1;
             }
-          }
-
-          $release = $null
-          gh release view $env:RELEASE_TAG --json assets,isDraft,isPrerelease *> $null
-          if ($LASTEXITCODE -eq 0) {
-            $release = gh release view $env:RELEASE_TAG --json assets,isDraft,isPrerelease | ConvertFrom-Json
-          }
-
-          if ($release) {
-            if (-not $tagExists -or $release.isDraft -or $release.isPrerelease) {
-              throw "Existing release $env:RELEASE_TAG does not match the required published release."
-            }
-            $asset = @($release.assets | Where-Object name -eq $assetName)
-            if ($asset.Count -ne 1) {
-              throw "Existing release $env:RELEASE_TAG does not contain exactly one $assetName asset."
-            }
-            $download = Join-Path $env:RUNNER_TEMP $assetName
-            gh release download $env:RELEASE_TAG --pattern $assetName --output $download
-            if ((Get-FileHash $download -Algorithm SHA256).Hash -cne (Get-FileHash $archive -Algorithm SHA256).Hash) {
-              throw "Existing release asset $assetName conflicts with the verified archive."
-            }
-            Write-Host "Matching published release already exists."
-            exit 0
-          }
-
-          $commonLib = (git -C lib/commonlibf4 rev-parse HEAD).Trim()
-          $shared = (git -C lib/commonlibf4/lib/commonlib-shared rev-parse HEAD).Trim()
-          $notes = @"
-          Source commit: $expectedCommit
-          CommonLibF4: $commonLib
-          commonlib-shared: $shared
-
-          LICENSE and EXCEPTIONS in the source repository apply.
-          "@
-
-          if ($tagExists) {
-            gh release create $env:RELEASE_TAG $archive --verify-tag --generate-notes --notes $notes
-          } else {
-            gh release create $env:RELEASE_TAG $archive --target $expectedCommit --generate-notes --notes $notes
-          }
+            if gh release view "$TAG" --json isDraft,isPrerelease > existing.json; then
+              jq -e '(.isDraft | not) and (.isPrerelease | not)' existing.json > /dev/null
+              gh release download "$TAG" --pattern "$ASSET" --output existing.zip
+              cmp existing.zip "dist/$ASSET"
+              echo "Matching published release already exists."
+              exit 0
+            fi
+          fi
+          gh release create "$TAG" "dist/$ASSET" --target "$GITHUB_SHA" \
+            --generate-notes --notes "Source: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/tree/$GITHUB_SHA"

@@ -141,3 +141,9 @@ function archive_payload(archive, batchcmds)
         batchcmds:cp(file.source, destination)
     end
 end
+
+function archive()
+    local packages = import("plugins.pack.xpack", { rootdir = os.programdir() }).packages()
+    assert(#packages == 1, "expected one plugin archive")
+    return packages[1]
+end

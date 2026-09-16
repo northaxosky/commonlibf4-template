@@ -1,5 +1,9 @@
 set_xmakever("3.1.1")
 
+includes("lib/commonlibf4")
+includes("@builtin/xpack")
+includes("scripts/xmake")
+
 local plugin_name = "commonlibf4-template"
 local plugin_version = "1.0.0"
 local plugin_author = "DearModdingFO4"
@@ -23,16 +27,13 @@ option("deploy_dir")
     set_description("full optional deployment directory")
 option_end()
 
-includes("lib/commonlibf4")
-includes("@builtin/xpack")
-includes("scripts/xmake")
-
 target(plugin_name)
-    add_rules("template.package", {
+    add_rules("commonlibf4.plugin", {
         name = plugin_name,
         author = plugin_author,
         description = plugin_description
     })
+    add_rules("template.package")
 
     add_files("src/**.cpp")
     add_headerfiles("src/**.h")

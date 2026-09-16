@@ -11,7 +11,7 @@ git clone --recurse-submodules https://github.com/YOUR-NAME/YOUR-PLUGIN
 cd YOUR-PLUGIN
 ```
 
-Requires Windows, xmake 3.1.1 or newer, and either MSVC or Clang-CL with the Windows SDK. Verification and release scripts use PowerShell 7.
+Requires Windows, xmake 3.1.1 or newer, and either MSVC or Clang-CL with the Windows SDK. Verification also requires `clang-format`.
 
 Before publishing a derived plugin, edit the name, version, author, and description together at the top of `xmake.lua`. The single `plugin_version` value controls binary metadata, archive names, tags, and releases.
 
@@ -58,16 +58,18 @@ The archive is written to `build\xpack\<plugin-name>\`.
 Run the same verification entry point used by CI:
 
 ```powershell
-.\scripts\verify.ps1 -Toolchain msvc -Mode debug,releasedbg -Full
-.\scripts\verify.ps1 -Toolchain clang-cl -Mode debug,releasedbg
+xmake f --toolchain=msvc --deploy_dir=
+xmake verify
 ```
 
-Verification uses temporary deployment directories and does not launch Fallout 4.
+Use `--toolchain=clang-cl` to check Clang-CL instead. Verification exercises both modes, cached staging, asset-only deployment, environment isolation, and archive contents. It uses temporary destinations, restores your configuration, and never launches Fallout 4.
 
 ## Runtime and releases
 
 Runtime support is inherited from the pinned CommonLibF4 revision. The exported OG query/load and newer preload entry points are retained.
 
 On `main`, increasing `plugin_version` creates `v<version>` and immediately publishes the verified `releasedbg` ZIP. Pull requests, feature branches, unchanged versions, and the repository's initial version do not publish. Existing conflicting tags or assets cause the release job to fail instead of overwriting them.
+
+`xmake release-info` reports the version, tag, and archive path from xmake metadata. CI uses `--before=<commit>` to detect a version increase and publishes the same archive it verified.
 
 This project is distributed under [LICENSE](LICENSE) with the additional terms in [EXCEPTIONS](EXCEPTIONS).

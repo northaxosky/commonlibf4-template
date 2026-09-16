@@ -13,19 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - toolchain: msvc
-            mode: debug
-            full: false
-          - toolchain: msvc
-            mode: releasedbg
-            full: true
-          - toolchain: clang-cl
-            mode: debug
-            full: false
-          - toolchain: clang-cl
-            mode: releasedbg
-            full: false
+        toolchain: [msvc, clang-cl]
 
     steps:
       - uses: actions/checkout@v4
@@ -36,14 +24,9 @@ jobs:
         with:
           xmake-version: '3.1.1'
 
-      - name: Verify
+      - name: Configure
         shell: pwsh
-        run: |
-          $arguments = @{
-            Toolchain = '${{ matrix.toolchain }}'
-            Mode = '${{ matrix.mode }}'
-          }
-          if ('${{ matrix.full }}' -eq 'true') {
-            $arguments.Full = $true
-          }
-          ./scripts/verify.ps1 @arguments
+        run: xmake f -y -m releasedbg --toolchain=${{ matrix.toolchain }} --deploy_dir=
+
+      - name: Verify
+        run: xmake verify
