@@ -1,43 +1,64 @@
--- include subprojects
-includes("lib/commonlibf4")
+set_xmakever("3.1.1")
 
--- name and version
 local plugin_name = "commonlibf4-template"
 local plugin_version = "1.0.0"
-local plugin_version_major, plugin_version_minor, plugin_version_patch = plugin_version:match("^(%d+)%.(%d+)%.(%d+)$")
+local plugin_author = "DearModdingFO4"
+local plugin_description = "Multi-runtime F4SE plugin template using CommonLibF4"
 
--- set project constants
 set_project(plugin_name)
 set_version(plugin_version)
 set_license("GPL-3.0")
 set_languages("c++23")
 set_warnings("allextra")
+set_encodings("utf-8")
+set_arch("x64")
+set_defaultmode("releasedbg")
 
--- add common rules
-add_rules("mode.release", "mode.releasedbg")
+add_rules("mode.debug", "mode.releasedbg")
 add_rules("plugin.vsxmake.autoupdate")
 
--- override runtime count
-add_defines("COMMONLIB_RUNTIMECOUNT=3")
+option("deploy_dir")
+    set_default("")
+    set_showmenu(true)
+    set_description("full optional deployment directory")
+option_end()
 
--- define targets
+includes("lib/commonlibf4")
+includes("@builtin/xpack")
+includes("scripts/xmake")
+
 target(plugin_name)
-    add_rules("commonlibf4.plugin", {
+    add_rules("template.package", {
         name = plugin_name,
-        author = "DearModdingFO4",
-        description = "Multi-Runtime F4SE Plugin Template using CommonLibF4"
+        author = plugin_author,
+        description = plugin_description
     })
 
-    -- add src files
     add_files("src/**.cpp")
     add_headerfiles("src/**.h")
     add_includedirs("src")
     set_pcxxheader("src/pch.h")
 
-    -- pass name and version
-    add_defines(
-        'PLUGIN_NAME="' .. plugin_name .. '"',
-        "PLUGIN_VERSION_MAJOR=" .. plugin_version_major,
-        "PLUGIN_VERSION_MINOR=" .. plugin_version_minor,
-        "PLUGIN_VERSION_PATCH=" .. plugin_version_patch
-    )
+    on_config(function(target)
+        import("scripts.xmake.package").configure(target)
+    end)
+
+    on_install(function(target)
+        import("scripts.xmake.package").install(target)
+    end)
+target_end()
+
+xpack(plugin_name)
+    set_formats("zip")
+    set_version(plugin_version)
+    set_basename(plugin_name .. "-" .. plugin_version)
+    add_targets(plugin_name)
+
+    on_load(function(package)
+        import("scripts.xmake.package").configure_archive(package)
+    end)
+
+    on_installcmd(function(package, batchcmds)
+        import("scripts.xmake.package").archive_payload(package, batchcmds)
+    end)
+xpack_end()

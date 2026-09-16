@@ -1,53 +1,73 @@
-# CommonLibF4 Multi-Runtime Plugin Template
+# CommonLibF4 plugin template
 
-This is a basic Multi-Runtime Plugin Template using CommonLibF4.<br>
-Supports all Fallout 4 game versions (OG, NG, AE).
+A minimal C++23 F4SE plugin starter built with CommonLibF4 and xmake.
 
-### Requirements
-* [XMake](https://xmake.io) [3.0.0+]
-* C++23 Compiler (MSVC or Clang-CL)
+## Set up
 
-## Getting Started
-```bat
-git clone --recurse-submodules https://github.com/Dear-Modding-FO4/commonlibf4-template
-cd commonlibf4-template
+Create a repository with [Use this template](https://github.com/northaxosky/commonlibf4-template/generate), then clone it with submodules:
+
+```powershell
+git clone --recurse-submodules https://github.com/YOUR-NAME/YOUR-PLUGIN
+cd YOUR-PLUGIN
 ```
 
-### Build
-To build the project, run the following command:
-```bat
+Requires Windows, xmake 3.1.1 or newer, and either MSVC or Clang-CL with the Windows SDK. Verification and release scripts use PowerShell 7.
+
+Before publishing a derived plugin, edit the name, version, author, and description together at the top of `xmake.lua`. The single `plugin_version` value controls binary metadata, archive names, tags, and releases.
+
+## Build
+
+`releasedbg` is the default distribution mode:
+
+```powershell
+xmake build
+xmake f -m debug
 xmake build
 ```
 
-> ***Note:*** *This will generate a `build/windows/` directory in the **project's root directory** with the build output.*
+Build outputs remain under `build\windows\x64\<mode>`. Every build ensures the selected DLL and PDB are staged in `package\F4SE\Plugins`.
 
-### Build Output (Optional)
-If you want to redirect the build output, set one of the following environment variables:
+To copy the complete package payload to an isolated development directory:
 
-- Path to a Mod Manager mods folder: `XSE_FO4_MODS_PATH`
-
-  or
-
-- Path to a Fallout 4 install folder: `XSE_FO4_GAME_PATH`
-
-### Project Generation (Optional)
-If you use Visual Studio, run the following command:
-```bat
-xmake project -k vsxmake
+```powershell
+xmake f --deploy_dir="C:\Mods\MyPlugin - Dev"
+xmake build
 ```
 
-> ***Note:*** *This will generate a `vsxmakeXXXX/` directory in the **project's root directory** using the latest version of Visual Studio installed on the system.*
+The destination is the full directory: no plugin-name directory is appended. Existing unrelated files are preserved. Clear the saved destination with:
 
-**Alternatively**, if you do not use Visual Studio, you can generate a `compile_commands.json` file for use with a laguage server like clangd in any code editor that supports it, like vscode:
-```bat
-xmake project -k compile_commands
+```powershell
+xmake f --deploy_dir=
 ```
 
-> ***Note:*** *You must have a language server extension installed to make use of this file. I recommend `clangd`. Do not have more than one installed at a time as they will conflict with each other. I also recommend installing the `xmake` extension if available to make building the project easier.*
+The legacy `FO4_DEV_MODS`, `XSE_FO4_MODS_PATH`, and `XSE_FO4_GAME_PATH` variables are ignored.
 
-### Upgrading Packages (Optional)
-If you want to upgrade the project's dependencies, run the following commands:
-```bat
-xmake repo --update
-xmake require --upgrade
+## Package and verify
+
+Authored Data-root files belong under `package\`. Generated DLL/PDB files in `package\F4SE\Plugins` are ignored. Nexus text and optional artwork stay outside the payload; place an optional logo at `nexus\logo.png`.
+
+Create the release ZIP from the canonical package contents:
+
+```powershell
+xmake f -m releasedbg
+xmake pack -f zip
 ```
+
+The archive is written to `build\xpack\<plugin-name>\`.
+
+Run the same verification entry point used by CI:
+
+```powershell
+.\scripts\verify.ps1 -Toolchain msvc -Mode debug,releasedbg -Full
+.\scripts\verify.ps1 -Toolchain clang-cl -Mode debug,releasedbg
+```
+
+Verification uses temporary deployment directories and does not launch Fallout 4.
+
+## Runtime and releases
+
+Runtime support is inherited from the pinned CommonLibF4 revision. The exported OG query/load and newer preload entry points are retained.
+
+On `main`, increasing `plugin_version` creates `v<version>` and immediately publishes the verified `releasedbg` ZIP. Pull requests, feature branches, unchanged versions, and the repository's initial version do not publish. Existing conflicting tags or assets cause the release job to fail instead of overwriting them.
+
+This project is distributed under [LICENSE](LICENSE) with the additional terms in [EXCEPTIONS](EXCEPTIONS).

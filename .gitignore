@@ -10,6 +10,15 @@ build*/
 vs*/
 
 # files
-*.zip
 compile_commands.json
 .clangd
+
+# local workspace guidance
+.worktreeinclude
+AGENTS.md
+TODO.md
+.github/skills/
+
+# generated package binaries
+package/F4SE/Plugins/*.dll
+package/F4SE/Plugins/*.pdb
